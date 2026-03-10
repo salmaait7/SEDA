@@ -1,0 +1,22 @@
+(circuit half_adder
+  (input e1)
+  (input e2)
+  (output sum)
+  (output cout)
+  (component and2
+    (input a)
+    (input b)
+    (output f)
+  )
+  (component xor2
+    (input a)
+    (input b)
+    (output f)
+  )
+  (connect (source half_adder e1) (sink and2 a))
+  (connect (source half_adder e1) (sink xor2 a))
+  (connect (source half_adder e2) (sink and2 b))
+  (connect (source half_adder e2) (sink xor2 b))
+  (connect (source and2 f) (sink half_adder sum))
+  (connect (source and2 f) (sink half_adder cout))
+)

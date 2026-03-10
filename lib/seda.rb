@@ -1,0 +1,5 @@
+require_relative "./seda/metamodel"
+require_relative "./seda/code"
+require_relative "./seda/serializer"
+require_relative "./seda/vhdl_generator"
+require_relative "./seda/dot_generator"

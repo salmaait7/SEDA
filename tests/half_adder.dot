@@ -1,0 +1,18 @@
+digraph{
+  rankdir=LR;
+  node [fontname="Helvetica",fontsize=10];
+  60[shape=circle,label="e1", style=filled, fillcolor="#cce5ff"];
+  80[shape=circle,label="e2", style=filled, fillcolor="#cce5ff"];
+ 
+  100[shape=circle,label="sum", style=filled, fillcolor="#ffcccc"];
+  120[shape=circle,label="cout", style=filled, fillcolor="#ffcccc"];
+ 
+  and2[shape=record,style="rounded,filled",fillcolor="#fff5cc",label="{{<a> a|<b> b}|and2|{<f> f}}"];
+  xor2[shape=record,style="rounded,filled",fillcolor="#fff5cc",label="{{<a> a|<b> b}|xor2|{<f> f}}"];
+  60 -> and2:a[label=""];
+  60 -> xor2:a[label=""];
+  80 -> and2:b[label=""];
+  80 -> xor2:b[label=""];
+  and2:f -> 100[label=""];
+  xor2:f -> 120[label=""];
+}
