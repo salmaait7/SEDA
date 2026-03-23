@@ -33,7 +33,7 @@ class Code
   end
 
   def newline
-    @lines << " "
+    @lines << ""
   end
 
   def save_as filename,verbose=false,sep="\n"

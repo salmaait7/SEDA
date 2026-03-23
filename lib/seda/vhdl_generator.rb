@@ -30,7 +30,9 @@ module Seda
          code << "#{input.name} : in  std_logic;"
       end
       circuit.outputs.each do |output|
-         code << "#{output.name} : out std_logic;"
+         line="#{output.name} : out std_logic"
+         line << ";" if output!=circuit.outputs.last
+         code << line
       end
       code.indent=2
       code << ");"
@@ -42,10 +44,10 @@ module Seda
     def gen_arch circuit
       code=Code.new
       signals=get_signals(circuit)
-      code << "architecture netlist of #{circuit.name} is "
+      code << "architecture Archi of #{circuit.name} is "
       code.indent=2
       signals.each do |sig|
-        code << "signal w_#{sig.object_id} : std_logic;"
+        code << "signal w_#{sig.object_id} : std_logic;"#TODO: vaut mieux utiliser des nominations lisible
       end
       code.indent=0
       code << "begin"
@@ -58,14 +60,16 @@ module Seda
       code.newline
 
       circuit.components.each do |comp|
-        code << "#{comp.name}_i : entity work.#{comp.name}"
+        code << "#{comp.instance_name} : entity work.#{comp.name}" #pour utiliser des instances distinctes de m compo
         code << "port map("
         code.indent=4
         comp.inputs.each do |input|
           code << "#{input.name} => w_#{input.source.object_id},"
         end
         comp.outputs.each do |output|
-          code << "#{output.name} => w_#{output.object_id},"
+          line="#{output.name} => w_#{output.object_id}"
+          line << "," if output!=comp.outputs.last
+          code << line 
         end
         code.indent=2
         code << ");"
@@ -77,7 +81,7 @@ module Seda
         code << "#{sig.name} <= w_#{sig.source.object_id};"
       end
       code.indent=0
-      code << "end architecture netlist;"
+      code << "end architecture Archi;"
       code.newline
       code
     end

@@ -2,7 +2,7 @@ module Seda
   class Port
     attr_accessor :name
     attr_accessor :source
-    attr_accessor :sinks
+    attr_accessor :sinks  # listesd of ports to which I am connected
     attr_accessor :circuit # to which circui I belong
 
     def initialize name
@@ -11,7 +11,7 @@ module Seda
       @sinks=[]
     end
 
-    def connect_to sink
+    def connect_to sink #on modélise une connexion orientée :a → b
       @sinks << sink
       sink.source=self
     end
@@ -29,9 +29,11 @@ module Seda
     attr_accessor :name
     attr_accessor :inputs,:outputs
     attr_accessor :components
+    attr_accessor :instance_name
 
     def initialize name
       @name=name
+      @instance_name= instance_name || name
       @inputs=[]
       @outputs=[]
       @components=[]

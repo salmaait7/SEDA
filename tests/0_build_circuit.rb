@@ -2,7 +2,7 @@ require_relative "../lib/seda"
 
 def build_a_half_adder
   puts "[+] building a half_adder programmatically"
-  include Seda
+  include Seda #pour ne pas devoir préfixer les classes avec 'Seda::'
   and2=Circuit.new("and2")
   and2 << Input.new("a")
   and2 << Input.new("b")
@@ -34,8 +34,8 @@ def build_a_half_adder
   e2.connect_to and2_b
   e1.connect_to xor2_a
   e2.connect_to xor2_b
-  and2_f.connect_to sum
-  xor2_f.connect_to cout
+  xor2_f.connect_to sum
+  and2_f.connect_to cout
 
   return ha
 end
@@ -43,5 +43,5 @@ end
 if __FILE__==$0
   ha=build_a_half_adder()
 
-  puts ha
+  puts ha # peut recevoir presque n’importe quel objet
 end
