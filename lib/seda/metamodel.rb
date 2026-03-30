@@ -15,6 +15,11 @@ module Seda
       @sinks << sink
       sink.source=self
     end
+    
+    def disconnect_from sink
+      @sinks.delete(sink)
+      
+    end
   end
 
   class Input < Port
@@ -58,6 +63,28 @@ module Seda
 
     def get_port_named name
       ports.find{|port| port.name==name}
+    end
+
+    def get_component_named name
+      components.find{|comp| comp.instance_name == name || comp.name == name}
+    end
+
+    def insert_gate_between(src, dst, gate_def)
+      in_port = gate_def.inputs.first
+      out_port = gate_def.outputs.first
+
+      unless src.sinks.include?(dst) #verifier s'il est connecté à dst
+        raise ArgumentError, "#{src.name} is not connected to #{dst.name}"
+      end
+
+      src.disconnect_from(dst)
+
+      self << gate_def unless components.include?(gate_def)
+
+      src.connect_to(in_port)
+      out_port.connect_to(dst)
+
+      gate_def
     end
   end
 end
