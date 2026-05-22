@@ -36,7 +36,7 @@ module Seda
     attr_accessor :components
     attr_accessor :instance_name
 
-    def initialize name
+    def initialize (name, instance_name = nil)
       @name=name
       @instance_name= instance_name || name
       @inputs=[]
@@ -87,4 +87,22 @@ module Seda
       gate_def
     end
   end
+
+  class Gate1 < Circuit
+    def initialize instance_name=nil
+      super(instance_name)
+      @inputs << Input.new("e")
+      @outputs << Output.new("f")
+    end
+  end
+
+  class Gate2 < Circuit
+    def initialize instance_name=nil
+      super(instance_name)
+      @inputs << Input.new("e1")
+      @inputs << Input.new("e2")
+      @outputs << Output.new("f")
+    end
+  end
+
 end

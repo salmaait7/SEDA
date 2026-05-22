@@ -4,11 +4,13 @@ module Seda
   class ExprSynthesizer
     def initialize
       @gate_index = 0
+      @ports = {}
     end
 
     def synthesize(expressions, circuit_name: "random_circuit") 
       @circuit = Circuit.new(circuit_name)
       @gate_index = 0
+      @ports = {}
 
       expressions.each_with_index do |expr, i|
         final_port = synth_expr(expr) # we get the final port of the expression, which is the output of the last gate in the expression tree
@@ -27,52 +29,70 @@ module Seda
     def synth_expr(expr) # the function that takes us from our logical expressions to a circuit(function of synthesizer)
       case expr
       when Expr::Var
-        input = @circuit.get_port_named(expr.name)
-
-        unless input
-          input = Input.new(expr.name)
-          @circuit << input
-        end
-
-        input
+        get_or_create_input(expr.name)
 
       when Expr::Buffer
-        src = synth_expr(expr.expr)
-        gate = new_gate(:buffer)
-        @circuit << gate
-
-        src.connect_to(gate.inputs[0])
-        gate.outputs[0]
+        synth_unary(expr, Gtech::Buf.new)
 
       when Expr::Not
-        src = synth_expr(expr.expr)
-        gate = new_gate(:not)
-        @circuit << gate
+        synth_unary(expr, Gtech::Not.new)
 
-        src.connect_to(gate.inputs[0])
-        gate.outputs[0]
+      when Expr::And
+        synth_binary(expr, Gtech::And2.new)
 
-      when Expr::And, Expr::Or, Expr::Xor, Expr::Nand, Expr::Nor
-        left_src  = synth_expr(expr.lhs)
-        right_src = synth_expr(expr.rhs)
+      when Expr::Or
+        synth_binary(expr, Gtech::Or2.new)
 
-        gate = new_gate(expr.op)
-        @circuit << gate
+      when Expr::Xor
+        synth_binary(expr, Gtech::Xor2.new)
 
-        left_src.connect_to(gate.inputs[0])
-        right_src.connect_to(gate.inputs[1])
+      when Expr::Nand
+        synth_binary(expr, Gtech::Nand2.new)
 
-        gate.outputs[0]
+      when Expr::Nor
+        synth_binary(expr, Gtech::Nor2.new)
 
       else
         raise "unsupported expression: #{expr.class}"
       end
     end
 
-    def new_gate(type) #we create a new gate with the type and an instance name
-      gate = GateFactory.build(type, "U#{@gate_index}")
+    def get_or_create_input(name)
+      return @ports[name] if @ports[name]
+
+      input = Input.new(name)
+      @ports[name] = input
+      @circuit << input
+
+      input
+    end
+
+    def synth_unary(expr, gate)
+      add_gate(gate)
+
+      src = synth_expr(expr.expr)
+      src.connect_to(gate.get_port_named("e"))
+
+      gate.get_port_named("f")
+    end
+
+    def synth_binary(expr, gate) #synth of 2 inputs gates
+      add_gate(gate)
+
+      left_src  = synth_expr(expr.lhs)
+      right_src = synth_expr(expr.rhs)
+
+      left_src.connect_to(gate.get_port_named("e1"))
+      right_src.connect_to(gate.get_port_named("e2"))
+
+      gate.get_port_named("f")
+    end
+
+    def add_gate(gate)
+      gate.instance_name = "U#{@gate_index}" if gate.respond_to?(:instance_name=)
       @gate_index += 1
-      gate
+
+      @circuit << gate
     end
   end
 end
