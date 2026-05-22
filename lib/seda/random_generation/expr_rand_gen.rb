@@ -7,13 +7,19 @@ module Seda
       2 => [Expr::And, Expr::Or, Expr::Xor, Expr::Nand, Expr::Nor]
     }
 
-    def initialize(vars:, depth:)
+    def initialize(vars:, depth:, nb_outputs:)
       @vars = vars.map { |v| Expr::Var.new(v) }
       @depth = depth
+      @nb_outputs = nb_outputs
     end
 
     def generate
-      gen_expr(@depth)
+        expressions = []
+        @nb_outputs.times do
+          expressions << gen_expr(@depth)
+        end
+        expressions
+        
     end
 
     def gen_expr(depth)
