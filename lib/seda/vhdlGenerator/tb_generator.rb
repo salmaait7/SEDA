@@ -25,6 +25,8 @@ module Seda
       code << "library ieee;"
       code << "use ieee.std_logic_1164.all;"
       code << "use ieee.numeric_std.all;"
+      code << "library std;"
+      code << "use std.textio.all;"
       code.newline
       code
     end
@@ -45,6 +47,8 @@ module Seda
       ports.each do |port|
          code << "signal #{port.name} : std_logic;"
        end
+      code.newline
+      code << 'file activity_file : text open write_mode is "activity.csv";'
 
       code.indent = 0
       code << "begin"
@@ -81,11 +85,33 @@ module Seda
       code << "wait;"
       code.indent = 2
       code << "end process;"
+      
+      code.newline
+      code << "monitor_proc : process(#{ports.map(&:name).join(', ')})" #sensibilité à tous les ports
+      code.indent = 2
+      code << "variable L : line;"
+      code.indent = 0
+      code << "begin"
+      code.indent = 2
+
+      code << "write(L, now);"
+
+      ports.each do |port|
+         code << "write(L, string'(\",\"));"
+         code << "write(L, #{port.name});"
+      end
+
+     code << "writeline(activity_file, L);"
+
+     code.indent = 0
+     code << "end process;"
 
       code.indent = 0
       code << "end architecture sim;"
 
+
       code
+
     end
 
     def stimulus_vectors(nb_inputs)
