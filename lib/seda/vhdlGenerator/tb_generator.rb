@@ -89,17 +89,18 @@ module Seda
     end
 
     def stimulus_vectors(nb_inputs)
-      max_vectors = 2 ** nb_inputs
-      count = [@nb_vectors, max_vectors].min
+      max_vectors = 2 ** nb_inputs #nombre de combinaisons possibles pour nb_inputs bits
+      count = [@nb_vectors, max_vectors].min #limiter le nombre de vecteurs générés à nb_vectors ou au maximum possible
 
       vectors = []
 
       count.times do |i|
-        binary = i.to_s(2).rjust(nb_inputs, "0")
+        binary = i.to_s(2).rjust(nb_inputs, "0") 
         vectors << binary.chars
       end
 
       vectors
     end
   end
+
 end
