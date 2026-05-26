@@ -28,9 +28,8 @@ puts "inputs: #{circuit.inputs.map(&:name).join(', ')}"
 puts "outputs: #{circuit.outputs.map(&:name).join(', ')}"
 puts "components: #{circuit.components.size}"
 
-generator_vhdl = Seda::VHDLDelayGenerator.new
+generator_vhdl = Seda::VHDLGenerator.new
 
 generator_vhdl.generate(circuit)
 
 puts
-puts "[+] Done."
