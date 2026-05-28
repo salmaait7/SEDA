@@ -10,9 +10,10 @@ module Seda
       "Buf"   => "1 ns"
     }
 
-    def initialize(delays: DELAYS)
+    def initialize(delays: DELAYS, debug: true)
       @delays = delays
       @wire_names = {}
+      @debug = debug
       @wire_index = 0
     end
 
@@ -52,14 +53,24 @@ module Seda
       code << "port("
       code.indent = 4
 
-      ports = circuit.inputs + circuit.outputs
+      normal_ports = circuit.inputs + circuit.outputs
+      debug_ports = @debug ? internal_outputs(circuit) : []
 
-      ports.each_with_index do |port, i|
-        direction = circuit.inputs.include?(port) ? "in " : "out" # if it's an input, direction is "in", otherwise it's an output and direction is "out"
-        line = "#{port.name} : #{direction} std_logic"
-        line << ";" unless i == ports.length - 1
+      ports_lines = []
+
+      normal_ports.each do |port|
+        direction = circuit.inputs.include?(port) ? "in " : "out" 
+        ports_lines << "#{port.name} : #{direction} std_logic"
+      end
+
+      debug_ports.each do |port|
+       ports_lines << "dbg_#{wire_name(port)} : out std_logic"
+      end
+      ports_lines.each_with_index do |line, index|
+        line += ";" unless index == ports_lines.size - 1
         code << line
       end
+
 
       code.indent = 2
       code << ");"
@@ -91,6 +102,14 @@ module Seda
 
       circuit.outputs.each do |output|
         code << "#{output.name} <= #{signal_ref(output.source)};"
+      end
+
+      if @debug
+        code.newline
+        code << "-- Debug signals for internal wires"
+        internal_outputs(circuit).each do |port|
+            code << "dbg_#{wire_name(port)} <= #{wire_name(port)};"
+        end
       end
 
       code.indent = 0

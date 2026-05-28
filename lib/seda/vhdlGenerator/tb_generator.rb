@@ -1,8 +1,11 @@
 module Seda
   class TestbenchGenerator
-    def initialize(step_time: "20 ns", nb_vectors: 10)
+    DbgSignal = Struct.new(:name) #class pour représenter les signaux de debug
+
+    def initialize(step_time: "20 ns", nb_vectors: 10, debug: true)
       @step_time = step_time
       @nb_vectors = nb_vectors
+      @debug = debug
     end
 
     def generate(circuit)
@@ -43,7 +46,7 @@ module Seda
 
       code << "architecture sim of tb_#{circuit.name} is"
       code.indent = 2
-      ports = circuit.inputs + circuit.outputs
+      ports = circuit.inputs + circuit.outputs + (@debug ? debug_signals(circuit) : [])
       ports.each do |port|
          code << "signal #{port.name} : std_logic;"
        end
@@ -94,11 +97,16 @@ module Seda
       code << "begin"
       code.indent = 2
 
+      code << write_header = "write(L, string'(\"Time\"));"
+      ports.each do |port|
+         code << "write(L, string'(\",#{port.name}\"));"
+      end
+
       code << "write(L, now);"
 
       ports.each do |port|
          code << "write(L, string'(\",\"));"
-         code << "write(L, #{port.name});"
+         code << "write(L, std_logic'image(#{port.name}));"
       end
 
      code << "writeline(activity_file, L);"
@@ -112,6 +120,15 @@ module Seda
 
       code
 
+    end
+
+    def internal_outputs(circuit)
+     circuit.components.flat_map(&:outputs)
+    end
+    def debug_signals(circuit)
+      internal_outputs(circuit).each_with_index.map do |port, index|
+        DbgSignal.new("dbg_w#{index}")
+      end
     end
 
     def stimulus_vectors(nb_inputs)
