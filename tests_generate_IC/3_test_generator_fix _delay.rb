@@ -17,19 +17,35 @@ end
 
 synth = Seda::ExprSynthesizer.new
 
-circuit = synth.synthesize(
+circuit_fixed_delay = synth.synthesize(
   expressions,
-  circuit_name: "circuit2"
+  
+  circuit_name: "circuit_fixed_delay"
+)
+
+circuit_fixed_epsilon = synth.synthesize(
+  expressions,  
+  circuit_name: "circuit_fixed_epsilon"
+)
+
+circuit_variable_epsilon = synth.synthesize(
+  expressions,
+  circuit_name: "circuit_variable_epsilon"
 )
 
 puts
 puts "[+] Circuit generated:"
-puts "inputs: #{circuit.inputs.map(&:name).join(', ')}"
-puts "outputs: #{circuit.outputs.map(&:name).join(', ')}"
-puts "components: #{circuit.components.size}"
+puts "inputs: #{circuit_fixed_delay.inputs.map(&:name).join(', ')}"
+puts "outputs: #{circuit_fixed_delay.outputs.map(&:name).join(', ')}"
+puts "components: #{circuit_fixed_delay.components.size}"
 
-generator_vhdl = Seda::VHDLDelayGenerator.new
+generator_vhdl_C1= Seda::VHDLDelayGenerator.new(delay_mode: :fixed)
+generator_vhdl_C1.generate(circuit_fixed_delay) 
 
-generator_vhdl.generate(circuit)
+generator_vhdl_C2= Seda::VHDLDelayGenerator.new(delay_mode: :inter_die)
+generator_vhdl_C2.generate(circuit_fixed_epsilon)
+
+generator_vhdl_C3= Seda::VHDLDelayGenerator.new(delay_mode: :intra_die)
+generator_vhdl_C3.generate(circuit_variable_epsilon)
 
 puts

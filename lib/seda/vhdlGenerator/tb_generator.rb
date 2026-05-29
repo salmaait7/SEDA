@@ -51,7 +51,7 @@ module Seda
          code << "signal #{port.name} : std_logic;"
        end
       code.newline
-      code << 'file activity_file : text open write_mode is "activity.csv";'
+      code << "file activity_file : text open write_mode is \"activity_#{circuit.name}.csv\";"
 
       code.indent = 0
       code << "begin"
@@ -97,10 +97,6 @@ module Seda
       code << "begin"
       code.indent = 2
 
-      code << write_header = "write(L, string'(\"Time\"));"
-      ports.each do |port|
-         code << "write(L, string'(\",#{port.name}\"));"
-      end
 
       code << "write(L, now);"
 

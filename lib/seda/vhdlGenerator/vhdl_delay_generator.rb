@@ -1,8 +1,8 @@
 module Seda
   class VHDLDelayGenerator
     DELAYS = {
-      "And2"  => "2 ns",
-      "Or2"   => "2 ns",
+      "And2"  => "4 ns",
+      "Or2"   => "4 ns",
       "Xor2"  => "3 ns",
       "Nand2" => "2 ns",
       "Nor2"  => "2 ns",
@@ -10,11 +10,35 @@ module Seda
       "Buf"   => "1 ns"
     }
 
-    def initialize(delays: DELAYS, debug: true)
+    def initialize(delay_mode: :intra_die, delays: DELAYS, debug: true)
       @delays = delays
       @wire_names = {}
       @debug = debug
       @wire_index = 0
+      @delay_mode = delay_mode
+    end
+
+    def delay_for(gate)
+      gate_name = gate.class.name.split("::").last # remove the module prefix gtech:: to get the gate name
+      base_delay = @delays[gate_name]
+      case @delay_mode
+      when :fixed
+        base_delay
+      when :inter_die
+        # add a random variation of +/- 20% to the base delay for all gates
+        @fixed_epsilon ||= 1.2
+        final_delay = base_delay.to_f * @fixed_epsilon
+        "#{final_delay.round(2)} ns"
+
+      when :intra_die
+        # add a random variation of +/- 20% to the base delay for each gate independently
+        epsilon = rand(0.8..1.2)
+        final_delay = base_delay.to_f * epsilon
+        "#{final_delay.round(2)} ns"
+
+      else
+        raise ArgumentError, "Unknown delay mode: #{@delay_mode}"
+      end
     end
 
     def generate(circuit)
@@ -165,11 +189,11 @@ module Seda
       end
     end
 
-    def delay_for(gate)
-      gate_name = gate.class.name.split("::").last # remove the module prefix gtech:: to get the gate name
-      puts "the gate name is #{gate_name}"
-      @delays[gate_name]
-    end
+    # def delay_for(gate)
+    #   gate_name = gate.class.name.split("::").last # remove the module prefix gtech:: to get the gate name
+    #   puts "the gate name is #{gate_name}"
+    #   @delays[gate_name]
+    # end
 
     def signal_ref(port) # le signal soit un port d'entrée du circuit, soit une sortie d'une porte interne. Si c'est un port d'entrée, on utilise son nom, sinon on utilise le nom du fil interne qui le connecte à la sortie de la porte
       if @circuit.inputs.include?(port)

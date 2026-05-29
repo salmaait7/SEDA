@@ -7,10 +7,26 @@ signals = [
 
 input_signals = ["x1", "x0", "x3", "x4", "x2"]
 
-analyzer = Seda::ActivityAnalyzer.new(
-  file: "activity/activity.csv",
-  signals: signals,
-  input_signals: input_signals
-)
+files = {
+  fixed: "activity/activity_circuit_fixed_delay.csv",
+  inter_die: "activity/activity_circuit_fixed_epsilon.csv",
+  variable_epsilon: "activity/activity_circuit_variable_epsilon.csv"
+}
 
-analyzer.run
+results = {}
+
+files.each do |case_name, file|
+  puts
+  puts "===================================="
+  puts "Case: #{case_name}"
+  puts "File: #{file}"
+  puts "===================================="
+
+  analyzer = Seda::ActivityAnalyzer.new(
+    file: file,
+    signals: signals,
+    input_signals: input_signals
+  )
+
+  results[case_name] = analyzer.run
+end
