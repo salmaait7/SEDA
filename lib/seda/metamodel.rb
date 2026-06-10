@@ -91,17 +91,17 @@ module Seda
   class Gate1 < Circuit
     def initialize instance_name=nil
       super(instance_name)
-      @inputs << Input.new("e")
-      @outputs << Output.new("f")
+      self << Input.new("e")
+      self << Output.new("f")
     end
   end
 
   class Gate2 < Circuit
     def initialize instance_name=nil
       super(instance_name)
-      @inputs << Input.new("e1")
-      @inputs << Input.new("e2")
-      @outputs << Output.new("f")
+      self << Input.new("e1")
+      self << Input.new("e2")
+      self << Output.new("f")
     end
   end
 
