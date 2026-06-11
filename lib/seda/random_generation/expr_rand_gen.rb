@@ -1,4 +1,5 @@
 require_relative "expr_ast"
+
 #generates random expressions with controlled dpth
 module Seda
   class ExprRandGen
@@ -7,34 +8,81 @@ module Seda
       2 => [Expr::And, Expr::Or, Expr::Xor, Expr::Nand, Expr::Nor]
     }
 
-    def initialize(vars:, depth:, nb_outputs:)
+    def initialize(vars:, depth:, nb_outputs:, reuse_probability: 0.5)
       @vars = vars.map { |v| Expr::Var.new(v) }
       @depth = depth
       @nb_outputs = nb_outputs
+      @reuse_probability = reuse_probability
+      @expr_pool = [] # to store generated expressions for potential reuse
+      @unused_vars = []
     end
 
     def generate
-        expressions = []
-        @nb_outputs.times do
-          expressions << gen_expr(@depth)
-        end
-        expressions
-        
+      expressions = []
+      @expr_pool = [] # pool of previously generated expressions for reuse
+      @unused_vars = @vars.shuffle # inputs that must be used at least once
+
+      @nb_outputs.times do
+        expressions << gen_expr(@depth, top_level: true)
+      end
+
+      if @unused_vars.any?
+        puts "some inputs were not used:"
+        puts @unused_vars.map(&:name).join(", ")
+      end
+
+      expressions
     end
 
-    def gen_expr(depth)
+    def gen_expr(depth, top_level: false)
       if depth == 0
-        return @vars.sample
+        return choose_var
       end
 
-      arity = [1, 2].sample
+      # to prevent that some inputs are never used, we force the generator to use them until they are all used at least once
+      if !top_level && @unused_vars.empty? && !@expr_pool.empty? && rand < @reuse_probability
+        return @expr_pool.sample
+      end
+
+      arity = choose_arity
       gate_kind = EXPR_KIND[arity].sample
 
-      if arity == 1
-        gate_kind.new(gen_expr(depth - 1))
+      expr =
+        if arity == 1
+          gate_kind.new(gen_expr(depth - 1))
+        else
+          gate_kind.new(gen_expr(depth - 1), gen_expr(depth - 1)) # it generates per example (x0 And (Not x1))
+        end
+
+      remember_expr(expr)
+
+      expr
+    end
+
+    def choose_var
+      # first use inputs that have not appeared yet
+      # after that, choose randomly from all inputs
+      if @unused_vars.any?
+        @unused_vars.shift
       else
-        gate_kind.new(gen_expr(depth - 1), gen_expr(depth - 1)) # it generates per example (x0 And (Not x1))
+        @vars.sample
       end
+    end
+
+    def choose_arity
+      # while some inputs are still unused, prefer binary gates
+      # because binary gates create more leaves and help consume all inputs
+      if @unused_vars.any?
+        2
+      else
+        [1, 2].sample
+      end
+    end
+
+    def remember_expr(expr)
+      return if expr.is_a?(Expr::Var) # don't store variables in the pool
+
+      @expr_pool << expr unless @expr_pool.include?(expr) # avoid duplicat
     end
   end
 end
