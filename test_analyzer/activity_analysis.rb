@@ -1,32 +1,40 @@
-require_relative "../lib/ActivityAnalyzer/analyzer"
-
-signals = [
-  "x1", "x0", "x3", "x4", "x2",
-  "y0", "y1", "y2"
-] + (0..15).map { |i| "dbg_w#{i}" }
-
-input_signals = ["x1", "x0", "x3", "x4", "x2"]
+require_relative "../lib/seda"
 
 files = {
-  fixed: "activity/activity_circuit_fixed_delay.csv",
-  inter_die: "activity/activity_circuit_fixed_epsilon.csv",
-  variable_epsilon: "activity/activity_circuit_variable_epsilon.csv"
+  original_fixed_delay: "activity/activity_original_circuit_fixed_delay.csv",
+  original_fixed_epsilon: "activity/activity_original_circuit_fixed_epsilon.csv",
+  original_variable_epsilon: "activity/activity_original_circuit_variable_epsilon.csv",
+
+  altered_fixed_delay: "activity/activity_altered_circuit_fixed_delay.csv",
+  altered_fixed_epsilon: "activity/activity_altered_circuit_fixed_epsilon.csv",
+  altered_variable_epsilon: "activity/activity_altered_circuit_variable_epsilon.csv"
 }
 
 results = {}
 
 files.each do |case_name, file|
   puts
-  puts "===================================="
   puts "Case: #{case_name}"
-  puts "File: #{file}"
-  puts "===================================="
+  puts "======================="
 
-  analyzer = Seda::ActivityAnalyzer.new(
-    file: file,
-    signals: signals,
-    input_signals: input_signals
+  results[case_name] = Seda::ActivityAnalyzer.analyze_file(file)
+end
+
+
+comparisons = [
+  [:original_fixed_delay, :original_fixed_epsilon],
+  [:original_fixed_delay, :original_variable_epsilon],
+
+  [:original_variable_epsilon, :altered_fixed_epsilon],
+  [:altered_fixed_delay, :original_variable_epsilon],
+  [:altered_variable_epsilon, :original_variable_epsilon]
+]
+
+comparisons.each do |case_a, case_b|
+  Seda::ActivityAnalyzer.compare(
+    results,
+    case_a,
+    case_b
+  
   )
-
-  results[case_name] = analyzer.run
 end

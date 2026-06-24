@@ -18,7 +18,7 @@ module Seda
       code << gen_arch(circuit)
 
       filename = "tb_#{circuit.name}.vhd"
-      code.save_as(filename)
+      code.save_as("generated/vhdl/tb/#{filename}")
 
       puts "[+] Testbench saved as '#{filename}'"
     end
@@ -51,7 +51,7 @@ module Seda
          code << "signal #{port.name} : std_logic;"
        end
       code.newline
-      code << "file activity_file : text open write_mode is \"activity_#{circuit.name}.csv\";"
+      code << "file activity_file : text open write_mode is \"activity/activity_#{circuit.name}.csv\";"
 
       code.indent = 0
       code << "begin"
@@ -90,19 +90,35 @@ module Seda
       code << "end process;"
       
       code.newline
-      code << "monitor_proc : process(#{ports.map(&:name).join(', ')})" #sensibilité à tous les ports
+      code << "monitor_proc : process(#{ports.map(&:name).join(', ')})"
       code.indent = 2
       code << "variable L : line;"
+      code << "variable header_written : boolean := false;"
       code.indent = 0
       code << "begin"
       code.indent = 2
 
+# Write CSV header only once
+      code << "if not header_written then"
+      code.indent = 4
+      code << "write(L, string'(\"time\"));"
 
+      ports.each do |port|
+        code << "write(L, string'(\",#{port.name}\"));"
+      end
+
+      code << "writeline(activity_file, L);"
+      code << "header_written := true;"
+      code.indent = 2
+      code << "end if;"
+      code.newline
+
+# Write activity values
       code << "write(L, now);"
 
       ports.each do |port|
-         code << "write(L, string'(\",\"));"
-         code << "write(L, std_logic'image(#{port.name}));"
+       code << "write(L, string'(\",\"));"
+       code << "write(L, std_logic'image(#{port.name}));"
       end
 
      code << "writeline(activity_file, L);"

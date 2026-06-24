@@ -41,7 +41,11 @@ module Seda
 
       # to prevent that some inputs are never used, we force the generator to use them until they are all used at least once
       if !top_level && @unused_vars.empty? && !@expr_pool.empty? && rand < @reuse_probability
-        return @expr_pool.sample
+        candidates = @expr_pool.select { |expr| expr_depth(expr) <= depth }
+
+        if candidates.any?
+          return candidates.sample
+        end
       end
 
       arity = choose_arity
@@ -70,8 +74,6 @@ module Seda
     end
 
     def choose_arity
-      # while some inputs are still unused, prefer binary gates
-      # because binary gates create more leaves and help consume all inputs
       if @unused_vars.any?
         2
       else
@@ -83,6 +85,24 @@ module Seda
       return if expr.is_a?(Expr::Var) # don't store variables in the pool
 
       @expr_pool << expr unless @expr_pool.include?(expr) # avoid duplicat
+    end
+
+    def expr_depth(expr)
+      return 0 if expr.is_a?(Expr::Var)
+
+      children = expr.instance_variables.map do |var|
+        value = expr.instance_variable_get(var)
+
+        if value.is_a?(Expr::Var) || value.class.name.include?("Expr::")
+          value
+        else
+          nil
+        end
+      end.compact
+
+      return 1 if children.empty?
+
+      1 + children.map { |child| expr_depth(child) }.max
     end
   end
 end

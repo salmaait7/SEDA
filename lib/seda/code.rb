@@ -1,17 +1,19 @@
+require "fileutils"
+
 class Code
 
-  attr_accessor :indent,:lines
+  attr_accessor :indent, :lines
 
   def initialize str=nil
-    @lines=[]
+    @lines = []
     (@lines << str) if str
-    @indent=0
+    @indent = 0
   end
 
   def <<(thing)
-    if (code=thing).is_a? Code
+    if (code = thing).is_a? Code
       code.lines.each do |line|
-        @lines << " "*@indent+line.to_s
+        @lines << " " * @indent + line.to_s
       end
     elsif thing.is_a? Array
       thing.each do |kode|
@@ -19,7 +21,7 @@ class Code
       end
     elsif thing.nil?
     else
-      @lines << " "*@indent+thing.to_s
+      @lines << " " * @indent + thing.to_s
     end
   end
 
@@ -36,11 +38,20 @@ class Code
     @lines << ""
   end
 
-  def save_as filename,verbose=false,sep="\n"
-    str=self.finalize
-    File.open(filename,'w'){|f| f.puts(str)}
+  def save_as(filename, verbose=false, sep="\n")
+    str = self.finalize
+
+    directory = File.dirname(filename)
+
+    if directory != "."
+      FileUtils.mkdir_p(directory)
+    end
+
+    File.open(filename, "w") { |f| f.puts(str) }
+
     puts "=> code saved as : #{filename}" if verbose
-    return filename
+
+    filename
   end
 
   def size

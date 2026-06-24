@@ -10,7 +10,9 @@ module Seda
       code.indent = 2
 
       code << "rankdir=LR;"
-      code << "node [fontname=\"Helvetica\", fontsize=10];"
+      code << "graph [fontname=\"Ubuntu Sans\"];"
+      code << "node [fontname=\"Ubuntu Sans\", fontsize=10];"
+      code << "edge [fontname=\"Ubuntu Sans\"];"
       code.newline
 
       # Inputs
@@ -64,7 +66,7 @@ module Seda
       code << "}"
 
       dot_name = "#{circuit.name}.dot"
-      code.save_as(dot_name)
+      code.save_as("generated/dot/#{dot_name}")
 
       puts "[+] code saved as '#{dot_name}'"
     end

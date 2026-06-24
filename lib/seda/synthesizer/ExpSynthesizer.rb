@@ -11,6 +11,7 @@ module Seda
       @circuit = Circuit.new(circuit_name)
       @gate_index = 0
       @ports = {}
+      @exp_cache = {}
 
       expressions.each_with_index do |expr, i|
         final_port = synth_expr(expr) # we get the final port of the expression, which is the output of the last gate in the expression tree

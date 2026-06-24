@@ -10,6 +10,8 @@ module Seda
       "Buf"   => "1 ns"
     }
 
+    #debug is a flag to indicate whether we want to generate debug signals for all internal wires (outputs of gates) in the circuit. These debug signals will be added as additional output ports in the VHDL entity and will be assigned the value of the corresponding internal wire in the architecture.
+
     def initialize(delay_mode: :intra_die, delays: DELAYS, debug: true)
       @delays = delays
       @wire_names = {}
@@ -19,7 +21,7 @@ module Seda
     end
 
     def delay_for(gate)
-      gate_name = gate.class.name.split("::").last # remove the module prefix gtech:: to get the gate name
+      gate_name = gate.class.name.split("::").last # remove the module laprefix gtech:: to get the gate name
       base_delay = @delays[gate_name]
       case @delay_mode
       when :fixed
@@ -55,7 +57,7 @@ module Seda
       code << gen_arch(circuit)
 
       filename = "#{circuit.name}.vhd"
-      code.save_as(filename)
+      code.save_as("generated/vhdl/circuits/#{filename}")
 
       puts "[+] VHDL saved as '#{filename}'"
     end
@@ -77,7 +79,9 @@ module Seda
       code << "port("
       code.indent = 4
 
-      normal_ports = circuit.inputs + circuit.outputs
+     
+      normal_ports = circuit.inputs.sort_by { |p| p.name.gsub(/\D/, "").to_i } +
+               circuit.outputs.sort_by { |p| p.name.gsub(/\D/, "").to_i }
       debug_ports = @debug ? internal_outputs(circuit) : []
 
       ports_lines = []
