@@ -3,7 +3,7 @@ module Seda
     def self.analyze_file(file, input_signals: nil, step_time: 20.0, nb_cycles: nil, signals_to_analyze: nil)
       signals = read_signals(file)
       input_signals ||= signals.select { |s| s.match?(/^x\d+$/) }
-      signals_to_analyze = signals - input_signals
+      signals_to_analyze ||= signals
 
       analyzer = new(file, signals, input_signals, step_time, nb_cycles, signals_to_analyze)
       analyzer.run
@@ -13,24 +13,6 @@ module Seda
       header = File.readlines(file).first
       header.split(",")[1..-1].map(&:strip) # remove time
     end
-
-    def self.save_cycle_activity(results, output_file)
-      FileUtils.mkdir_p(File.dirname(output_file))
-
-      CSV.open(output_file, "w") do |csv|
-       
-        csv << ["signal", "cycle", "activity", "first transition"]
-        results[:cycle_activity].each do |signal, cycles|
-          cycles.each do |cycle, activity|
-            first_transition = results[:first_transitions][signal][cycle]
-            csv << [signal, cycle, activity, first_transition]
-          end
-        end
-      puts "[+] Cycle activity saved to #{output_file}"
-        
-    end
-  end
-
 
     
 
@@ -75,7 +57,40 @@ module Seda
         puts "  max       : #{a[:max_per_cycle]} -> #{b[:max_per_cycle]}"
       end
 
-      
+      # puts
+      # puts "[2.2] Delayed first transition times differences"
+
+      # first_transitions_a = results[case_a][:first_transitions]
+      # first_transitions_b = results[case_b][:first_transitions]
+
+      # if first_transitions_a.nil? && first_transitions_b.nil?
+      #   puts "No first transition data available for either case."
+      # return
+      # end
+
+      # found_difference = false
+      # signals.each do |sig|
+      #   first_a = first_transitions_a[sig]
+      #   first_b = first_transitions_b[sig]
+
+      #   next if first_a.nil? && first_b.nil?
+
+      #   cycles = (first_a.keys + first_b.keys).uniq.sort
+      #   cycles.each do |cycle|
+      #     time_a = first_a[cycle]
+      #     time_b = first_b[cycle]
+
+      #     next if time_a.nil? && time_b.nil?
+
+      #     if time_a != time_b
+      #       found_difference = true
+      #       puts
+      #       puts "#{sig} - cycle #{cycle}:"
+      #       puts "  #{case_a}: #{time_a.nil? ? 'no transition' : format('%.3f', time_a)} ns"
+      #       puts "  #{case_b}: #{time_b.nil? ? 'no transition' : format('%.3f', time_b)} ns"
+      #     end
+      #   end
+      # end
     end
         
     
@@ -102,7 +117,30 @@ module Seda
       end
     end
 
-   
+    # def self.compare_transition_times(results, case_a, case_b, signal)
+    #   transitions_a = results[case_a][:transitions][signal] || []
+    #   transitions_b = results[case_b][:transitions][signal] || []
+
+    #   puts
+    #   puts "Transition times comparison for #{signal}"
+
+    #   puts "#{case_a}:"
+    #   print_transition_list(transitions_a)
+
+    #   puts "#{case_b}:"
+    #   print_transition_list(transitions_b)
+    # end
+
+    # def self.print_transition_list(transitions)
+    #   if transitions.empty?
+    #     puts "  no transition"
+    #     return
+    #   end
+
+    #   transitions.each do |transition|
+    #     puts "  t=#{format('%.3f', transition[:time])} ns : #{transition[:from]} -> #{transition[:to]}  cycle=#{transition[:cycle]}"
+    #   end
+    # end
 
     def initialize(file, signals, input_signals, step_time, nb_cycles, signals_to_analyze)
       @file = file
@@ -124,33 +162,20 @@ module Seda
 
       cycle_activity = activity_by_cycle(transitions, rows)
 
-      first_transitions = first_transitions_by_cycle(transitions,rows)
+      first_transitions = first_transitions_by_cycle(transitions, rows)
 
+      stats = activity_stats_by_node(cycle_activity)
 
-      result = {
+      print_results(cycle_activity, stats)
+
+      {
         rows: rows,
         transitions: transitions,
         counts: counts,
         cycle_activity: cycle_activity,
-        first_transitions: first_transitions
-        
-      } 
-      result
-
-      # first_transitions = first_transitions_by_cycle(transitions, rows)
-
-      # stats = activity_stats_by_node(cycle_activity)
-
-      # print_results(cycle_activity, stats)
-
-      # {
-      #   rows: rows,
-      #   transitions: transitions,
-      #   counts: counts,
-      #   cycle_activity: cycle_activity
-      #   # first_transitions: first_transitions,
-      #   # stats: stats
-      # }
+        first_transitions: first_transitions,
+        stats: stats
+      }
     end
 
     def read_file
@@ -200,7 +225,7 @@ module Seda
       rows.each do |row|
         current_cycle = cycle_id(row[:time])
 
-        @observed_signals.each do |sig|
+        @signals.each do |sig|
           value = row[:values][sig]
 
           next unless valid_logic_value?(value)
@@ -215,7 +240,6 @@ module Seda
           transitions[sig] << {
             time: row[:time],
             from: previous[sig],
-            # relative_time: row[:time] - (current_cycle * @step_time),
             to: value,
             cycle: current_cycle
           }
@@ -224,7 +248,7 @@ module Seda
         end
       end
 
-      @observed_signals.each { |sig| transitions[sig] ||= [] }
+      @signals.each { |sig| transitions[sig] ||= [] }
 
       transitions
     end
@@ -334,7 +358,17 @@ module Seda
     end
 
     def print_results(cycle_activity, stats)
+      # puts
+      # puts "[1.1] Activity per node and per cycle"
 
+      # cycle_activity.each do |sig, cycles|
+      #   puts
+      #   puts sig
+
+      #   cycles.keys.sort.each do |cycle|
+      #     puts "  cycle #{cycle} : #{cycles[cycle]} transitions"
+      #   end
+      # end
 
       puts
       puts "[1.2] Statistics per node"

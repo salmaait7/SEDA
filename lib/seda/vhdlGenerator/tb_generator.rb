@@ -37,6 +37,11 @@ module Seda
     def gen_entity(circuit)
       code = Code.new
       code << "entity tb_#{circuit.name} is"
+      code.indent = 2
+      code << "generic ("
+      code << "    Result_file : string := \"activity.csv\""
+      code << ");"
+      code.indent = 0
       code << "end entity tb_#{circuit.name};"
       code
     end
@@ -51,7 +56,7 @@ module Seda
          code << "signal #{port.name} : std_logic;"
        end
       code.newline
-      code << "file activity_file : text open write_mode is \"activity/activity_#{circuit.name}.csv\";"
+      code << "file activity_file : text open write_mode is Result_file;"
 
       code.indent = 0
       code << "begin"
@@ -147,14 +152,38 @@ module Seda
       max_vectors = 2 ** nb_inputs #nombre de combinaisons possibles pour nb_inputs bits
       count = [@nb_vectors, max_vectors].min #limiter le nombre de vecteurs générés à nb_vectors ou au maximum possible
 
+      rng = Random.new(42)
       vectors = []
-
-      count.times do |i|
-        binary = i.to_s(2).rjust(nb_inputs, "0") 
-        vectors << binary.chars
+      seen = {}
+      add_vector = lambda do |vec|
+        key = vec.join
+        return if seen[key]
+        return if vectors.size >= count
+        vectors << vec
+        seen[key] = true
       end
 
+      zero = Array.new(nb_inputs, "0")
+      add_vector.call(zero)
+      one = Array.new(nb_inputs, "1")
+      add_vector.call(one)
+
+
+      nb_inputs.times do |i| #forcer chaque bit à 1 une fois
+        vec = Array.new(nb_inputs, "0")
+        vec[i] = "1"
+        add_vector.call(vec)
+      end
+
+     while vectors.size < count
+        vec = Array.new(nb_inputs) { rng.rand(2).to_s }
+        add_vector.call(vec)
+      end
+      
       vectors
+      # for i in 0...vectors.size
+      #   puts "Vector #{i}: #{vectors[i].join}"
+      # end
     end
   end
 

@@ -30,7 +30,7 @@ module Seda
       code.newline
 
       # Gates / components
-      circuit.components.each do |comp|
+      circuit.components.each_with_index do |comp, index|
         node_id = node_id_for(comp)
 
         inputs = comp.inputs.map do |input|
@@ -40,8 +40,9 @@ module Seda
         outputs = comp.outputs.map do |output|
           "<#{output.name}> #{output.name}"
         end.join("|")
+        debug_name = "dbg_w#{index}"
 
-        label = "{{#{inputs}}|#{comp.name}|{#{outputs}}}"
+        label = "{{#{inputs}}|#{comp.name}\\n#{debug_name}|{#{outputs}}}"
 
         code << "#{node_id} [shape=record, style=\"rounded,filled\", fillcolor=\"#fff5cc\", label=\"#{label}\"];"
       end
