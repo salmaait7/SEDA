@@ -1,0 +1,37 @@
+{
+  "Nand2": {
+    "cell": "sky130_fd_sc_hd__nand2_1",
+    "rise": 0.10,
+    "fall": 0.10
+  },
+  "Nor2": {
+    "cell": "sky130_fd_sc_hd__nor2_1",
+    "rise": 0.12,
+    "fall": 0.12
+  },
+  "And2": {
+    "cell": "sky130_fd_sc_hd__and2_1",
+    "rise": 0.15,
+    "fall": 0.15
+  },
+  "Or2": {
+    "cell": "sky130_fd_sc_hd__or2_1",
+    "rise": 0.17,
+    "fall": 0.17
+  },
+  "Xor2": {
+    "cell": "sky130_fd_sc_hd__xor2_1",
+    "rise": 0.25,
+    "fall": 0.25
+  },
+  "Not": {
+    "cell": "sky130_fd_sc_hd__inv_1",
+    "rise": 0.05,
+    "fall": 0.05
+  },
+  "Buf": {
+    "cell": "sky130_fd_sc_hd__buf_1",
+    "rise": 0.06,
+    "fall": 0.06
+  }
+}
