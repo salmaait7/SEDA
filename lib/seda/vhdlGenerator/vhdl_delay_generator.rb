@@ -1,49 +1,35 @@
 require "csv"
+require "digest"
 require "fileutils"
+require "json"
 
 module Seda
   class VHDLDelayGenerator
-    DELAYS = {
-      "And2"  => "1.5 ns",
-      "Or2"   => "1.7 ns",
-      "Xor2"  => "2.5 ns",
-      "Nand2" => "1.0 ns",
-      "Nor2"  => "1.2 ns",
-      "Not"   => "0.5 ns",
-      "Buf"   => "0.6 ns"
-    }.freeze
-
     attr_reader :applied_delays
 
     def initialize(
+      delay_file:,
       delay_mode: :fixed,
-      delays: DELAYS,
       margin: 0.0,
       seed: nil,
       debug: true
     )
-      @delays = delays
-      @delay_mode = delay_mode
-      @margin = margin.to_f
+      @delays = load_delays_from_json(delay_file)
+      @delay_mode = delay_mode.to_sym
+      @margin = Float(margin)
+      @seed = Integer(seed || Random.new_seed)
       @debug = debug
-
-      # Random indépendant pour rendre un tirage reproductible.
-      @seed = seed || Random.new_seed
-      @random = Random.new(@seed)
 
       @wire_names = {}
       @wire_index = 0
-
-      # Contient les variations réellement appliquées aux portes.
       @applied_delays = []
-
-      # Utilisé uniquement pour le mode inter_die.
       @global_epsilon = nil
+      @used_gate_identifiers = {}
     end
 
     def generate(
       circuit,
-      output_dir: "generated/vhdl/circuits",
+      output_dir: "build/vhdl/circuits",
       filename: nil,
       delay_report_file: nil
     )
@@ -54,10 +40,11 @@ module Seda
       @wire_index = 0
       @applied_delays = []
       @global_epsilon = nil
+      @used_gate_identifiers = {}
 
       puts "[+] Generating VHDL circuit '#{circuit.name}'..."
       puts "    delay mode: #{@delay_mode}"
-      puts "    margin: ±#{(@margin * 100).round(2)}%"
+      puts "    margin: +/-#{(@margin * 100).round(2)}%"
       puts "    seed: #{@seed}"
 
       code = Code.new
@@ -72,7 +59,6 @@ module Seda
       output_file = File.join(output_dir, filename)
 
       code.save_as(output_file)
-
       puts "[+] VHDL saved as '#{output_file}'"
 
       if delay_report_file
@@ -84,42 +70,52 @@ module Seda
     end
 
     def delay_for(gate, gate_index:)
-      gate_name = gate.class.name.split("::").last
+      gate_type = gate.class.name.split("::").last
+      gate_identifier = stable_gate_identifier(gate, gate_index)
+      gate_delays = @delays[gate_type]
 
-      base_delay_string = @delays[gate_name]
-
-      unless base_delay_string
+      unless gate_delays
         raise ArgumentError,
-              "No nominal delay defined for gate type '#{gate_name}'"
+              "No nominal delay defined for gate type '#{gate_type}'"
       end
 
-      base_delay = numeric_delay(base_delay_string)
-      epsilon = epsilon_for_current_run
-      final_delay = base_delay * epsilon
+      register_gate_identifier!(gate_identifier, gate_index)
+
+      base_rise = gate_delays.fetch(:rise)
+      base_fall = gate_delays.fetch(:fall)
+      epsilon = epsilon_for_current_run(gate_identifier)
+
+      # une instance conserve le meme epsilon pour ses deux fronts
+      final_rise = base_rise * epsilon
+      final_fall = base_fall * epsilon
 
       output_port = gate.get_port_named("f")
 
       @applied_delays << {
         gate_index: gate_index,
-        gate_type: gate_name,
+        instance_name: gate_identifier,
+        gate_type: gate_type,
         output_signal: signal_ref(output_port),
-        base_delay_ns: base_delay,
+        base_rise_ns: base_rise,
+        base_fall_ns: base_fall,
         epsilon: epsilon,
         variation_percent: (epsilon - 1.0) * 100.0,
-        final_delay_ns: final_delay
+        final_rise_ns: final_rise,
+        final_fall_ns: final_fall
       }
 
-      "#{format_delay(final_delay)} ns"
+      {
+        rise: final_rise,
+        fall: final_fall
+      }
     end
 
     def ieee
       code = Code.new
-
       code << "library ieee;"
       code << "use ieee.std_logic_1164.all;"
       code << "use ieee.numeric_std.all;"
       code.newline
-
       code
     end
 
@@ -132,11 +128,10 @@ module Seda
       code.indent = 4
 
       normal_ports =
-        circuit.inputs.sort_by { |port| numeric_part(port.name) } +
-        circuit.outputs.sort_by { |port| numeric_part(port.name) }
+        circuit.inputs.sort_by { |port| sort_key(port.name) } +
+        circuit.outputs.sort_by { |port| sort_key(port.name) }
 
       debug_ports = @debug ? internal_outputs(circuit) : []
-
       port_lines = []
 
       normal_ports.each do |port|
@@ -157,7 +152,6 @@ module Seda
       code << ");"
       code.indent = 0
       code << "end entity #{circuit.name};"
-
       code
     end
 
@@ -199,7 +193,6 @@ module Seda
 
       code.indent = 0
       code << "end architecture Behavioral;"
-
       code
     end
 
@@ -213,53 +206,55 @@ module Seda
         gate_index: gate_index
       )
 
+      rise_delay = delay.fetch(:rise)
+      fall_delay = delay.fetch(:fall)
       out = signal_ref(gate.get_port_named("f"))
 
-      case gate
-      when Gtech::Buf
-        input = signal_ref(gate.get_port_named("e").source)
+      expression =
+        case gate
+        when Gtech::Buf
+          signal_ref(gate.get_port_named("e").source)
 
-        "#{out} <= #{input} after #{delay};"
+        when Gtech::Not
+          input = signal_ref(gate.get_port_named("e").source)
+          "not #{input}"
 
-      when Gtech::Not
-        input = signal_ref(gate.get_port_named("e").source)
+        when Gtech::And2
+          input_a = signal_ref(gate.get_port_named("e1").source)
+          input_b = signal_ref(gate.get_port_named("e2").source)
+          "#{input_a} and #{input_b}"
 
-        "#{out} <= not #{input} after #{delay};"
+        when Gtech::Or2
+          input_a = signal_ref(gate.get_port_named("e1").source)
+          input_b = signal_ref(gate.get_port_named("e2").source)
+          "#{input_a} or #{input_b}"
 
-      when Gtech::And2
-        input_a = signal_ref(gate.get_port_named("e1").source)
-        input_b = signal_ref(gate.get_port_named("e2").source)
+        when Gtech::Xor2
+          input_a = signal_ref(gate.get_port_named("e1").source)
+          input_b = signal_ref(gate.get_port_named("e2").source)
+          "#{input_a} xor #{input_b}"
 
-        "#{out} <= #{input_a} and #{input_b} after #{delay};"
+        when Gtech::Nand2
+          input_a = signal_ref(gate.get_port_named("e1").source)
+          input_b = signal_ref(gate.get_port_named("e2").source)
+          "#{input_a} nand #{input_b}"
 
-      when Gtech::Or2
-        input_a = signal_ref(gate.get_port_named("e1").source)
-        input_b = signal_ref(gate.get_port_named("e2").source)
+        when Gtech::Nor2
+          input_a = signal_ref(gate.get_port_named("e1").source)
+          input_b = signal_ref(gate.get_port_named("e2").source)
+          "#{input_a} nor #{input_b}"
 
-        "#{out} <= #{input_a} or #{input_b} after #{delay};"
+        else
+          raise ArgumentError,
+                "Unsupported gate type: #{gate.class}"
+        end
 
-      when Gtech::Xor2
-        input_a = signal_ref(gate.get_port_named("e1").source)
-        input_b = signal_ref(gate.get_port_named("e2").source)
-
-        "#{out} <= #{input_a} xor #{input_b} after #{delay};"
-
-      when Gtech::Nand2
-        input_a = signal_ref(gate.get_port_named("e1").source)
-        input_b = signal_ref(gate.get_port_named("e2").source)
-
-        "#{out} <= #{input_a} nand #{input_b} after #{delay};"
-
-      when Gtech::Nor2
-        input_a = signal_ref(gate.get_port_named("e1").source)
-        input_b = signal_ref(gate.get_port_named("e2").source)
-
-        "#{out} <= #{input_a} nor #{input_b} after #{delay};"
-
-      else
-        raise ArgumentError,
-              "Unsupported gate type: #{gate.class}"
-      end
+      generate_delayed_assignment(
+        out,
+        expression,
+        rise_delay,
+        fall_delay
+      )
     end
 
     def signal_ref(port)
@@ -288,12 +283,15 @@ module Seda
           "delay_mode",
           "margin",
           "gate_index",
+          "instance_name",
           "gate_type",
           "output_signal",
-          "base_delay_ns",
+          "base_rise_ns",
+          "base_fall_ns",
           "epsilon",
           "variation_percent",
-          "final_delay_ns"
+          "final_rise_ns",
+          "final_fall_ns"
         ]
 
         @applied_delays.each do |delay|
@@ -301,13 +299,16 @@ module Seda
             @seed,
             @delay_mode,
             @margin,
-            delay[:gate_index],
-            delay[:gate_type],
-            delay[:output_signal],
-            delay[:base_delay_ns],
-            delay[:epsilon],
-            delay[:variation_percent],
-            delay[:final_delay_ns]
+            delay.fetch(:gate_index),
+            delay.fetch(:instance_name),
+            delay.fetch(:gate_type),
+            delay.fetch(:output_signal),
+            delay.fetch(:base_rise_ns),
+            delay.fetch(:base_fall_ns),
+            delay.fetch(:epsilon),
+            delay.fetch(:variation_percent),
+            delay.fetch(:final_rise_ns),
+            delay.fetch(:final_fall_ns)
           ]
         end
       end
@@ -315,19 +316,57 @@ module Seda
 
     private
 
-    def epsilon_for_current_run
+    def load_delays_from_json(file)
+      data = JSON.parse(File.read(file))
+
+      data.each_with_object({}) do |(gate_name, values), delays|
+        rise = values["rise"]
+        fall = values["fall"]
+
+        if rise.nil? || fall.nil?
+          raise ArgumentError,
+                "Rise or fall delay missing for gate '#{gate_name}'"
+        end
+
+        rise = Float(rise)
+        fall = Float(fall)
+
+        # if rise.negative? || fall.negative?
+        #   raise ArgumentError,
+        #         "Negative delay for gate '#{gate_name}'"
+        # end
+
+        delays[gate_name] = {
+          rise: rise,
+          fall: fall
+        }
+      end
+    end
+
+    def generate_delayed_assignment(
+      out,
+      expression,
+      rise_delay,
+      fall_delay
+    )
+      rise = format_delay(rise_delay)
+      fall = format_delay(fall_delay)
+
+      "#{out} <= (#{expression}) after #{rise} ns " \
+        "when (#{expression}) = '1' else " \
+        "(#{expression}) after #{fall} ns;"
+    end
+
+    def epsilon_for_current_run(instance_name)
       case @delay_mode
       when :fixed
         1.0
 
       when :inter_die
-        # Une seule variation est générée puis appliquée
-        # à toutes les portes du circuit.
-        @global_epsilon ||= random_epsilon
+        @global_epsilon ||= deterministic_epsilon("__global__")
 
       when :intra_die
-        # Chaque porte reçoit une variation indépendante.
-        random_epsilon
+        deterministic_epsilon(instance_name)
 
       else
         raise ArgumentError,
@@ -335,23 +374,40 @@ module Seda
       end
     end
 
-    def random_epsilon
+    def deterministic_epsilon(instance_name)
+      key = "#{@seed}:#{instance_name}"
+      digest = Digest::SHA256.hexdigest(key)
+      local_seed = digest[0, 16].to_i(16)
+      local_random = Random.new(local_seed)
+
       minimum = 1.0 - @margin
       maximum = 1.0 + @margin
 
-      minimum + @random.rand * (maximum - minimum)
+      minimum + local_random.rand * (maximum - minimum)
     end
 
-    def numeric_delay(delay)
-      delay.to_s
-           .strip
-           .sub(/\s*ns\z/i, "")
-           .to_f
+    def stable_gate_identifier(gate, gate_index)
+      if gate.respond_to?(:instance_name)
+        instance_name = gate.instance_name.to_s.strip
+        return instance_name unless instance_name.empty?
+      end
+
+      "#{gate.class.name}:#{gate_index}"
+    end
+
+    def register_gate_identifier!(gate_identifier, gate_index)
+      previous_index = @used_gate_identifiers[gate_identifier]
+
+      # unless previous_index.nil?
+      #   raise ArgumentError,
+      #         "duplicate gate instance name '#{gate_identifier}' " \
+      #         "for gate indexes #{previous_index} and #{gate_index}"
+      # end
+
+      @used_gate_identifiers[gate_identifier] = gate_index
     end
 
     def format_delay(delay)
-      # Il vaut mieux garder plusieurs décimales.
-      # Avec round(2), de faibles variations peuvent disparaître.
       format("%.6f", delay)
         .sub(/0+\z/, "")
         .sub(/\.\z/, "")
@@ -360,6 +416,10 @@ module Seda
     def numeric_part(name)
       number = name.to_s.gsub(/\D/, "")
       number.empty? ? Float::INFINITY : number.to_i
+    end
+
+    def sort_key(name)
+      [numeric_part(name), name.to_s]
     end
 
     def validate_parameters!

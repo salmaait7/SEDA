@@ -1,11 +1,20 @@
+require "fileutils"
+
 module Seda
   class TestbenchGenerator
-    DbgSignal = Struct.new(:name) #class pour représenter les signaux de debug
+    # Représente un signal interne exposé par un port de debug
+    DbgSignal = Struct.new(:name)
 
-    def initialize(step_time: "20 ns", nb_vectors: 10, debug: true)
+    def initialize(
+      step_time: "20 ns",
+      nb_vectors: 10,
+      debug: true,
+      stimulus_seed: 300
+    )
       @step_time = step_time
       @nb_vectors = nb_vectors
       @debug = debug
+      @stimulus_seed = stimulus_seed
     end
 
     def generate(circuit)
@@ -17,32 +26,38 @@ module Seda
       code.newline
       code << gen_arch(circuit)
 
-      filename = "tb_#{circuit.name}.vhd"
-      code.save_as("generated/vhdl/tb/#{filename}")
+      output_dir = "build/vhdl/circuits/tb"
+      FileUtils.mkdir_p(output_dir)
 
-      puts "[+] Testbench saved as '#{filename}'"
+      filename = "tb_#{circuit.name}.vhd"
+      output_file = File.join(output_dir, filename)
+
+      code.save_as(output_file)
+
+      puts "[+] Testbench saved as '#{output_file}'"
+
+      output_file
     end
 
     def ieee
       code = Code.new
+
       code << "library ieee;"
       code << "use ieee.std_logic_1164.all;"
       code << "use ieee.numeric_std.all;"
       code << "library std;"
-      code << "use std.textio.all;"
+      code << "use std.env.all;"
       code.newline
+
       code
     end
 
     def gen_entity(circuit)
       code = Code.new
+
       code << "entity tb_#{circuit.name} is"
-      code.indent = 2
-      code << "generic ("
-      code << "    Result_file : string := \"activity.csv\""
-      code << ");"
-      code.indent = 0
       code << "end entity tb_#{circuit.name};"
+
       code
     end
 
@@ -51,26 +66,30 @@ module Seda
 
       code << "architecture sim of tb_#{circuit.name} is"
       code.indent = 2
-      ports = circuit.inputs + circuit.outputs + (@debug ? debug_signals(circuit) : [])
+
+      ports =
+        circuit.inputs +
+        circuit.outputs +
+        (@debug ? debug_signals(circuit) : [])
+
+      # Déclaration des signaux du testbench.
       ports.each do |port|
-         code << "signal #{port.name} : std_logic;"
-       end
-      code.newline
-      code << "file activity_file : text open write_mode is Result_file;"
+        code << "signal #{port.name} : std_logic;"
+      end
 
       code.indent = 0
       code << "begin"
       code.indent = 2
 
+      # Instanciation du circuit.
       code << "dut : entity work.#{circuit.name}"
       code << "port map("
       code.indent = 4
 
-    #   ports = circuit.inputs + circuit.outputs
-
-      ports.each_with_index do |port, i|
+      ports.each_with_index do |port, index|
         line = "#{port.name} => #{port.name}"
-        line << "," unless i == ports.length - 1
+        line += "," unless index == ports.length - 1
+
         code << line
       end
 
@@ -78,113 +97,87 @@ module Seda
       code << ");"
       code.newline
 
+      # Processus d'application des stimuli.
       code << "stim_proc : process"
       code << "begin"
       code.indent = 4
 
       stimulus_vectors(circuit.inputs.size).each do |vector|
-        circuit.inputs.each_with_index do |input, i|
-          code << "#{input.name} <= '#{vector[i]}';"
+        circuit.inputs.each_with_index do |input, index|
+          code << "#{input.name} <= '#{vector[index]}';"
         end
+
         code << "wait for #{@step_time};"
         code.newline
       end
 
+      code << "stop;"
       code << "wait;"
+
       code.indent = 2
       code << "end process;"
-      
-      code.newline
-      code << "monitor_proc : process(#{ports.map(&:name).join(', ')})"
-      code.indent = 2
-      code << "variable L : line;"
-      code << "variable header_written : boolean := false;"
-      code.indent = 0
-      code << "begin"
-      code.indent = 2
-
-# Write CSV header only once
-      code << "if not header_written then"
-      code.indent = 4
-      code << "write(L, string'(\"time\"));"
-
-      ports.each do |port|
-        code << "write(L, string'(\",#{port.name}\"));"
-      end
-
-      code << "writeline(activity_file, L);"
-      code << "header_written := true;"
-      code.indent = 2
-      code << "end if;"
-      code.newline
-
-# Write activity values
-      code << "write(L, now);"
-
-      ports.each do |port|
-       code << "write(L, string'(\",\"));"
-       code << "write(L, std_logic'image(#{port.name}));"
-      end
-
-     code << "writeline(activity_file, L);"
-
-     code.indent = 0
-     code << "end process;"
 
       code.indent = 0
       code << "end architecture sim;"
 
-
       code
-
     end
 
     def internal_outputs(circuit)
-     circuit.components.flat_map(&:outputs)
+      circuit.components.flat_map(&:outputs)
     end
+
     def debug_signals(circuit)
-      internal_outputs(circuit).each_with_index.map do |port, index|
+      internal_outputs(circuit).each_index.map do |index|
         DbgSignal.new("dbg_w#{index}")
       end
     end
 
     def stimulus_vectors(nb_inputs)
-      max_vectors = 2 ** nb_inputs #nombre de combinaisons possibles pour nb_inputs bits
-      count = [@nb_vectors, max_vectors].min #limiter le nombre de vecteurs générés à nb_vectors ou au maximum possible
+      # Nombre maximal de combinaisons possibles
+      max_vectors = 2**nb_inputs
+      count = [@nb_vectors, max_vectors].min
 
-      rng = Random.new(42)
+      rng = Random.new(@stimulus_seed)
+
       vectors = []
       seen = {}
-      add_vector = lambda do |vec|
-        key = vec.join
+
+      add_vector = lambda do |vector|
+        key = vector.join
+
         return if seen[key]
         return if vectors.size >= count
-        vectors << vec
+
+        vectors << vector
         seen[key] = true
       end
 
       zero = Array.new(nb_inputs, "0")
       add_vector.call(zero)
-      one = Array.new(nb_inputs, "1")
-      add_vector.call(one)
 
+   
+      # one = Array.new(nb_inputs, "1")
+      # add_vector.call(one)
 
-      nb_inputs.times do |i| #forcer chaque bit à 1 une fois
-        vec = Array.new(nb_inputs, "0")
-        vec[i] = "1"
-        add_vector.call(vec)
+     
+      nb_inputs.times do |index|
+        vector = Array.new(nb_inputs, "0")
+        vector[index] = "1"
+
+        add_vector.call(vector)
       end
 
-     while vectors.size < count
-        vec = Array.new(nb_inputs) { rng.rand(2).to_s }
-        add_vector.call(vec)
-      end
       
+      while vectors.size < count
+        vector = Array.new(nb_inputs) do
+          rng.rand(2).to_s
+        end
+
+        add_vector.call(vector)
+      end
+
       vectors
-      # for i in 0...vectors.size
-      #   puts "Vector #{i}: #{vectors[i].join}"
-      # end
     end
   end
-
 end
