@@ -71,8 +71,10 @@ module Seda
         circuit.inputs +
         circuit.outputs +
         (@debug ? debug_signals(circuit) : [])
+      code << "signal simulation_done : std_logic:= '0';"
+        
 
-      # Déclaration des signaux du testbench.
+      # Déclaration des signaux du testbench
       ports.each do |port|
         code << "signal #{port.name} : std_logic;"
       end
@@ -111,6 +113,8 @@ module Seda
         code.newline
       end
 
+      code << "simulation_done <= '1';"
+      code << "wait for 1 ps;"
       code << "stop;"
       code << "wait;"
 
