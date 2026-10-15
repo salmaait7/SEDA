@@ -2,8 +2,6 @@ require "csv"
 require "fileutils"
 require "set"
 
-VCD_TICK_FS = 1
-
 def load_signal_names(file)
   File.readlines(file, chomp: true)
       .map { |name| name.strip.downcase }
@@ -33,7 +31,10 @@ circuit_name =
   vcd_name[/\A(.+?)_margin_\d+/, 1] ||
   vcd_name.split("_").first
 
-project_root = File.expand_path("..", __dir__)
+project_root = File.expand_path(
+  ENV.fetch("PROJECT_ROOT", "../.."),
+  __dir__
+)
 
 default_inputs_file = File.join(
   project_root,
@@ -67,8 +68,7 @@ nb_cycles = Integer(
 )
 
 step_time_fs = (
-  Float(ENV.fetch("STEP_TIME_NS", "20.0")) *
-  1_000_000
+  Float(ENV.fetch("STEP_TIME_NS", "20.0")) * 1_000_000
 ).round
 
 dut_scope = ENV.fetch("DUT_SCOPE", "dut").downcase
@@ -102,9 +102,7 @@ if outputs_only && outputs.empty?
   abort("[ERROR] Output list is empty: #{outputs_file}")
 end
 
-
 signals = {}
-
 
 current_values = {}
 
@@ -114,6 +112,9 @@ activity = Hash.new do |hash, key|
     times_fs: []
   }
 end
+
+final_values = {}
+next_cycle_to_close = 0
 
 scope = []
 scope_paths = Set.new
@@ -163,6 +164,20 @@ File.foreach(vcd_file) do |line|
 
   if line.start_with?("#")
     raw_time = line[1..].to_i
+
+    # Valeurs juste avant les frontières de fin de cycle.
+    # Les changements à la frontière appartiennent au cycle suivant.
+    while next_cycle_to_close < nb_cycles &&
+          (next_cycle_to_close + 1) * step_time_fs <= raw_time
+
+      signals.each do |code, signal|
+        final_values[[signal, next_cycle_to_close]] =
+          current_values.fetch(code, "x")
+      end
+
+      next_cycle_to_close += 1
+    end
+
     current_time_fs = raw_time
     next
   end
@@ -226,6 +241,14 @@ if outputs_only
   end
 end
 
+if next_cycle_to_close < nb_cycles
+  abort(
+    "[ERROR] Valeurs finales incomplètes : " \
+    "#{next_cycle_to_close}/#{nb_cycles} cycles couverts."
+  )
+  )
+end
+
 if activity.empty?
   warn(
     "[WARNING] Signals were found, but no valid 0/1 " \
@@ -241,7 +264,6 @@ CSV.open(output_file, "w") do |csv|
     "cycle",
     "activity",
     "sequence",
-    "first_transition",
     "transition_times"
   ]
 
@@ -261,10 +283,45 @@ CSV.open(output_file, "w") do |csv|
       cycle,
       data[:sequence].size,
       data[:sequence].join(">"),
-      times_ns.first,
       times_ns.join(">")
     ]
   end
+end
+
+# Fichier séparé pour les valeurs finales
+final_dir = File.join(
+  File.dirname(output_file),
+  "final_values"
+)
+
+FileUtils.mkdir_p(final_dir)
+
+final_output_file = File.join(
+  final_dir,
+  "#{File.basename(output_file, File.extname(output_file))}" \
+  "_final_values.csv"
+)
+
+CSV.open(final_output_file, "w") do |csv|
+  csv << ["signal", "cycle", "final_value"]
+
+  final_values.keys.sort.each do |signal, cycle|
+    csv << [
+      signal,
+      cycle,
+      final_values.fetch([signal, cycle])
+    ]
+  end
+end
+
+unknown_final_count = final_values.values.count do |value|
+  !%w[0 1].include?(value)
+end
+
+if unknown_final_count.positive?
+  warn(
+    "[WARNING] #{unknown_final_count} final values are X/Z."
+  )
 end
 
 step_time_ns = step_time_fs / 1_000_000.0
@@ -285,3 +342,6 @@ puts "Number of cycles             : #{nb_cycles}"
 puts "Signals analysed             : #{signals.size}"
 puts "Active (signal, cycle) pairs : #{activity.size}"
 puts "Output                       : #{output_file}"
+puts "Final values recorded        : #{final_values.size}"
+puts "Unknown final values         : #{unknown_final_count}"
+puts "Final values output          : #{final_output_file}"
