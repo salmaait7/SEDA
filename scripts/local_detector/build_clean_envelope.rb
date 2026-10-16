@@ -1,0 +1,56 @@
+#!/usr/bin/env ruby
+
+require_relative "local_transient"
+
+# Paramètres de l'expérience
+TRAIN_RUNS = 20
+SPLIT_SEED = 2026
+TIME_FLOOR_NS = 0.001
+MIN_SEQUENCE_SAMPLES = 3
+
+# Arguments de la commande
+unless ARGV.length == 2
+  abort("Usage: ruby build_clean_envelope.rb CLEAN_DIR OUTPUT.json")
+end
+
+input_root, output_file = ARGV
+
+# Vérification des paramètres
+abort("TRAIN_RUNS doit être >= 2") if TRAIN_RUNS < 2
+abort("TIME_FLOOR_NS doit être > 0") unless TIME_FLOOR_NS.positive?
+
+unless MIN_SEQUENCE_SAMPLES.between?(2, TRAIN_RUNS)
+  abort("MIN_SEQUENCE_SAMPLES doit être entre 2 et TRAIN_RUNS")
+end
+
+# Recherche des fichiers d'activité clean
+files = LocalTransient.activity_files(input_root)
+abort("Aucun CSV d'activité trouvé dans #{input_root}") if files.empty?
+
+# Regroupement par marge, en excluant la marge zéro
+groups = LocalTransient.group_files_by_margin(
+  files,
+  include_zero: false
+)
+
+# Construction de la référence clean
+model = LocalTransient.build_envelope(
+  groups,
+  train_count: TRAIN_RUNS,
+  split_seed: SPLIT_SEED,
+  time_floor_ns: TIME_FLOOR_NS,
+  min_sequence_samples: MIN_SEQUENCE_SAMPLES
+)
+
+# Vérifier qu'au moins une référence temporelle a été construite
+has_reference = model.fetch("margins").values.any? do |margin_model|
+  !margin_model.fetch("pairs").empty?
+end
+
+abort("Aucune référence temporelle construite : vérifier les données et les paramètres") unless has_reference
+
+# Enregistrement du modèle
+LocalTransient.save_model(model, output_file)
+
+puts "Enveloppe enregistrée : #{File.expand_path(output_file)}"
+puts "Marges : #{model.fetch('margins').keys.map(&:to_i).sort.join(', ')}"
