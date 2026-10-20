@@ -126,6 +126,8 @@ margins = ENV.fetch("MARGINS", "0.05,0.10,0.15,0.20")
              .map { |value| Float(value) }
 
 number_of_runs = Integer(ENV.fetch("NUMBER_OF_RUNS", "30"))
+start_run = Integer(ENV.fetch("START_RUN", "1"))
+raise "START_RUN doit être >= 1" unless start_run.positive?
 nb_vectors = Integer(ENV.fetch("NB_VECTORS", "100"))
 step_time_ns = Float(ENV.fetch("STEP_TIME_NS", "40.0"))
 stimulus_seed = Integer(ENV.fetch("STIMULUS_SEED", "42"))
@@ -186,8 +188,9 @@ cases = [[0.0, 0, 1, 0]]
 
 margins.each do |margin|
   percent = (margin * 100).round
+  last_run = start_run + number_of_runs - 1
 
-  1.upto(number_of_runs) do |run_number|
+  start_run.upto(last_run) do |run_number|
     seed = percent * 100_000 + run_number
     cases << [margin, percent, run_number, seed]
   end
