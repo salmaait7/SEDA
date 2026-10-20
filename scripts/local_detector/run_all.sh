@@ -16,7 +16,7 @@ EVALUATOR="$DETECTOR_DIR/evaluate_detector.rb"
 
 # Paramètres communs à toutes les simulations
 MARGINS="${MARGINS:-0.05,0.10,0.15,0.20}"
-NUMBER_OF_RUNS="${NUMBER_OF_RUNS:-30}"
+
 NB_VECTORS="${NB_VECTORS:-100}"
 NB_CYCLES="${NB_CYCLES:-$NB_VECTORS}"
 STEP_TIME_NS="${STEP_TIME_NS:-40.0}"
@@ -26,7 +26,7 @@ CLEAN_VERILOG_FILE="${CLEAN_VERILOG_FILE:-$PROJECT_ROOT/data/benchmarks/clean/${
 DELAY_FILE="${DELAY_FILE:-$PROJECT_ROOT/config/delay_models/gate_delays.json}"
 
 export PROJECT_ROOT CIRCUIT
-export MARGINS NUMBER_OF_RUNS NB_VECTORS NB_CYCLES
+export MARGINS NB_VECTORS NB_CYCLES
 export STEP_TIME_NS STIMULUS_SEED
 export CLEAN_VERILOG_FILE DELAY_FILE
 
@@ -48,8 +48,11 @@ do
 done
 
 # Toutes les insertions du circuit sélectionné
+# trojan_files=(
+#   "$PROJECT_ROOT/data/benchmarks/trojan/${CIRCUIT}_"*.v
+# )
 trojan_files=(
-  "$PROJECT_ROOT/data/benchmarks/trojan/${CIRCUIT}_"*.v
+  "$PROJECT_ROOT/data/benchmarks/trojan/${CIRCUIT}_buf_N154.v"
 )
 
 if [[ ${#trojan_files[@]} -eq 0 ]]; then
@@ -71,6 +74,8 @@ echo "=================================================="
 
 
 CAMPAIGN_NAME=clean \
+START_RUN=1 \
+NUMBER_OF_RUNS=150 \
 TROJAN_VERILOG_FILE="${trojan_files[0]}" \
 ACTIVITY_ROOT="$RESULTS_ROOT/clean/activity" \
 VARIANTS=clean \
@@ -102,6 +107,8 @@ for trojan_file in "${trojan_files[@]}"; do
   echo "=================================================="
 
   CAMPAIGN_NAME="$insertion" \
+  START_RUN=101 \
+  NUMBER_OF_RUNS=50 \
   TROJAN_VERILOG_FILE="$trojan_file" \
   ACTIVITY_ROOT="$activity_root" \
   VARIANTS=trojan \

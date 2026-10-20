@@ -8,6 +8,31 @@ require_relative "local_transient"
 THRESHOLD_PERCENTILE = 0.95
 METRIC = "time_z_gt3_count"
 
+CALIBRATION_RUNS = (51..100)
+TEST_RUNS = (101..150)
+
+# Sélectionner les runs et vérifier les numéros attendus
+def select_runs(rows, range, margin:, label:)
+  selected = rows.select do |row|
+    run_number = LocalTransient.run_from_path(row.fetch("file"))
+    range.cover?(run_number)
+  end
+
+  run_numbers = selected.map do |row|
+    LocalTransient.run_from_path(row.fetch("file"))
+  end.sort
+
+  unless run_numbers == range.to_a
+    abort(
+      "Marge #{margin} : #{label} doit contenir exactement " \
+      "les runs #{range.first} à #{range.last}, sans doublons"
+    )
+  end
+
+  selected
+end
+
+# Arguments
 unless ARGV.length == 3
   abort(
     "Usage: ruby evaluate_detector.rb " \
@@ -33,33 +58,72 @@ trojan_by_margin = trojan_rows.group_by do |row|
   Integer(row.fetch("margin_percent"), 10)
 end
 
-margins = (clean_by_margin.keys & trojan_by_margin.keys).sort
-abort("Aucune marge commune aux deux fichiers") if margins.empty?
+# Vérifier que les deux fichiers couvrent les mêmes marges
+unless clean_by_margin.keys.sort == trojan_by_margin.keys.sort
+  abort("Les fichiers clean et Trojan ne couvrent pas les mêmes marges")
+end
+
+margins = clean_by_margin.keys.sort
 
 # Évaluation pour chaque marge
 results = margins.map do |margin|
-  clean_values = clean_by_margin.fetch(margin).map do |row|
+  # Clean 51–100 : calibration
+  calibration_rows = select_runs(
+    clean_by_margin.fetch(margin),
+    CALIBRATION_RUNS,
+    margin: margin,
+    label: "la calibration clean"
+  )
+
+  # Clean 101–150 : test
+  clean_test_rows = select_runs(
+    clean_by_margin.fetch(margin),
+    TEST_RUNS,
+    margin: margin,
+    label: "le test clean"
+  )
+
+  # Trojan 101–150 : test
+  trojan_test_rows = select_runs(
+    trojan_by_margin.fetch(margin),
+    TEST_RUNS,
+    margin: margin,
+    label: "le test Trojan"
+  )
+
+  calibration_values = calibration_rows.map do |row|
     Float(row.fetch(METRIC))
   end
 
-  trojan_values = trojan_by_margin.fetch(margin).map do |row|
+  clean_values = clean_test_rows.map do |row|
     Float(row.fetch(METRIC))
   end
 
-  # Seuil du score global, estimé sur les runs clean
+  trojan_values = trojan_test_rows.map do |row|
+    Float(row.fetch(METRIC))
+  end
+
+  # Seuil estimé uniquement sur la calibration clean
   threshold = LocalTransient.percentile(
-    clean_values,
+    calibration_values,
     THRESHOLD_PERCENTILE
   )
 
-  false_positives = clean_values.count { |value| value > threshold }
-  true_positives = trojan_values.count { |value| value > threshold }
+  # Performances mesurées uniquement sur le test
+  false_positives = clean_values.count do |value|
+    value > threshold
+  end
+
+  true_positives = trojan_values.count do |value|
+    value > threshold
+  end
 
   {
     margin_percent: margin,
     metric: METRIC,
-    clean_validation_runs: clean_values.length,
-    trojan_runs: trojan_values.length,
+    clean_calibration_runs: calibration_values.length,
+    clean_test_runs: clean_values.length,
+    trojan_test_runs: trojan_values.length,
     threshold_percentile: THRESHOLD_PERCENTILE,
     threshold: threshold,
 
@@ -79,8 +143,9 @@ end
 headers = %w[
   margin_percent
   metric
-  clean_validation_runs
-  trojan_runs
+  clean_calibration_runs
+  clean_test_runs
+  trojan_test_runs
   threshold_percentile
   threshold
   false_positive_rate_percent
@@ -102,6 +167,10 @@ CSV.open(output_file, "w") do |csv|
 end
 
 # Affichage
+puts "Calibration : clean 51–100"
+puts "Test : clean et Trojan 101–150"
+puts
+
 puts format(
   "%-8s %10s %10s %10s",
   "Marge", "FPR (%)", "TPR (%)", "AUC"
