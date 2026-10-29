@@ -136,7 +136,7 @@ module Seda
 
       normal_ports.each do |port|
         direction = circuit.inputs.include?(port) ? "in" : "out"
-        port_lines << "#{port.name} : #{direction} std_logic"
+        port_lines << "#{vhdl_identifier(port.name)} : #{direction} std_logic"
       end
 
       debug_ports.each do |port|
@@ -179,7 +179,7 @@ module Seda
       code.newline
 
       circuit.outputs.each do |output|
-        code << "#{output.name} <= #{signal_ref(output.source)};"
+        code << "#{vhdl_identifier(output.name)} <= #{signal_ref(output.source)};"
       end
 
       if @debug
@@ -258,18 +258,45 @@ module Seda
     end
 
     def signal_ref(port)
-      if @circuit.inputs.include?(port)
-        port.name
+      if port.is_a?(ConstantPort)
+        "'#{port.value}'"
+      elsif @circuit.inputs.include?(port)
+        vhdl_identifier(port.name)
       else
         wire_name(port)
       end
     end
+    def vhdl_identifier(name)
+      name = name.to_s
+
+      return name unless name.start_with?("\\")
+
+      body = name.delete_prefix("\\")
+      body = body.gsub("\\") { "\\\\" }
+
+      "\\" + body + "\\"
+    end
 
     def wire_name(port)
       @wire_names[port] ||= begin
-        name = "w#{@wire_index}"
-        @wire_index += 1
-        name
+        reserved_names = (
+          @circuit.inputs + @circuit.outputs
+        ).map do |external_port|
+          external_port.name.downcase
+        end
+
+        loop do
+          candidate = "w#{@wire_index}"
+          @wire_index += 1
+
+          next if reserved_names.include?(candidate.downcase)
+
+          if @debug
+            next if reserved_names.include?("dbg_#{candidate}".downcase)
+          end
+
+          break candidate
+        end
       end
     end
 

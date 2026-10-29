@@ -6,7 +6,11 @@ module Seda
     :inputs,
     :outputs,
     :wires,
-    :gates
+    :gates,
+    :assignments,
+    :connections,
+    :constants
+
   )
 
   class VerilogGateCircuitParser
@@ -64,6 +68,31 @@ module Seda
           when /\A\)/
             tokens << Token.new(:rparen, $&, [line, col])
 
+          when /\Aassign\b/
+            tokens << Token.new(:assign, $&, [line, col])
+          
+          when /\A=/
+            tokens << Token.new(:equal, $&, [line, col])
+          
+          when /\A~/
+            tokens << Token.new(:not_op, $&, [line, col])
+
+          when /\A(?:1'[bB])?([01])(?![a-zA-Z0-9_$'])/
+            value = Regexp.last_match(1)
+            tokens << Token.new(:constant, value, [line, col])
+
+          when /\A&/
+            tokens << Token.new(:and_op, $&, [line, col])
+
+          when /\A\^/
+            tokens << Token.new(:xor_op, $&, [line, col])
+
+          when /\A\|/
+            tokens << Token.new(:or_op, $&, [line, col])
+          
+          when /\A\\[^\s]+(?=\s)/
+            tokens << Token.new(:ident, $&, [line, col])
+
           when /\A[a-zA-Z_][a-zA-Z0-9_$]*/
             tokens << Token.new(:ident, $&, [line, col])
 
@@ -90,6 +119,86 @@ module Seda
       end
 
       private
+
+      def parse_expression
+        parse_or_expression
+      end
+      def parse_or_expression
+        left = parse_xor_expression
+        while show_next&.type == :or_op
+          accept_it
+          right = parse_xor_expression
+          left = { op: :or, left: left, right: right }
+        end
+        left
+      end
+
+      def parse_xor_expression
+        left = parse_and_expression
+        while show_next&.type == :xor_op
+          accept_it
+          right = parse_and_expression
+          left = { op: :xor, left: left, right: right }
+        end
+        left
+      end
+      def parse_and_expression
+        left = parse_unary_expression
+        while show_next&.type == :and_op
+          accept_it
+          right = parse_unary_expression
+          left = { op: :and, left: left, right: right }
+        end
+        left
+      end
+      def parse_unary_expression
+        if show_next&.type == :not_op
+          accept_it
+          operand = parse_unary_expression
+          { op: :not, operand: operand }
+        else
+          parse_primary_expression
+        end
+      end
+
+      def parse_primary_expression
+        case show_next&.type
+        when :lparen
+          accept_it
+          expr = parse_expression
+          expect(:rparen)
+          expr
+
+        when :constant
+          {
+            op: :constant,
+            value: accept_it.value
+          }
+
+        else
+          {
+            op: :signal,
+            name: expect(:ident).value
+          }
+        end
+      end
+
+      def parse_assign_statement
+        expect(:assign)
+        assignements = []
+        loop do
+          target = expect(:ident).value
+          expect(:equal)
+          expr = parse_expression
+          assignements << { target: target, expression: expr }
+          break unless show_next&.type == :comma
+          accept_it
+        end
+        expect(:semicolon)
+        assignements
+      end
+
+      
 
       def show_next
         @tokens.first
@@ -126,6 +235,7 @@ module Seda
         outputs = []
         wires = []
         gates = []
+        assignments = []
 
         until show_next.nil? || show_next.type == :endmodule
           case show_next.type
@@ -140,6 +250,9 @@ module Seda
 
           when :gate_type
             gates << parse_gate_instance
+          
+          when :assign
+            assignments.concat(parse_assign_statement)
 
           else
             tok = show_next
@@ -154,7 +267,11 @@ module Seda
           inputs: inputs.uniq,
           outputs: outputs.uniq,
           wires: wires.uniq,
-          gates: gates
+          gates: gates,
+          assignments: assignments,
+          connections: [],
+          constants: []
+        
         )
       end
 

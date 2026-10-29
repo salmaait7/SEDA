@@ -28,6 +28,20 @@ module Seda
   class Output < Port
   end
 
+  class ConstantPort < Port
+    attr_reader :value
+
+    def initialize(name, value)
+      super(name)
+
+      @value = value.to_s
+
+      unless ["0", "1"].include?(@value)
+        raise ArgumentError, "Constante invalide : #{@value.inspect}"
+      end
+    end
+  end
+
 
   class Circuit
 

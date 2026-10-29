@@ -76,7 +76,7 @@ module Seda
 
       # Déclaration des signaux du testbench
       ports.each do |port|
-        code << "signal #{port.name} : std_logic;"
+        code << "signal #{vhdl_identifier(port.name)} : std_logic;"
       end
 
       code.indent = 0
@@ -89,7 +89,8 @@ module Seda
       code.indent = 4
 
       ports.each_with_index do |port, index|
-        line = "#{port.name} => #{port.name}"
+        identifier = vhdl_identifier(port.name)
+        line = "#{identifier} => #{identifier}"
         line += "," unless index == ports.length - 1
 
         code << line
@@ -106,7 +107,7 @@ module Seda
 
       stimulus_vectors(circuit.inputs.size).each do |vector|
         circuit.inputs.each_with_index do |input, index|
-          code << "#{input.name} <= '#{vector[index]}';"
+          code << "#{vhdl_identifier(input.name)} <= '#{vector[index]}';"
         end
 
         code << "wait for #{@step_time};"
@@ -127,59 +128,67 @@ module Seda
       code
     end
 
+    def vhdl_identifier(name)
+      name = name.to_s
+
+      return name unless name.start_with?("\\")
+
+      body = name.delete_prefix("\\")
+      body = body.gsub("\\") { "\\\\" }
+
+      "\\" + body + "\\"
+    end
+
     def internal_outputs(circuit)
       circuit.components.flat_map(&:outputs)
     end
 
     def debug_signals(circuit)
-      internal_outputs(circuit).each_index.map do |index|
-        DbgSignal.new("dbg_w#{index}")
+      reserved_names = (
+        circuit.inputs + circuit.outputs
+      ).map { |port| port.name.downcase }
+
+      wire_index = 0
+
+      internal_outputs(circuit).map do |_port|
+        loop do
+          candidate = "w#{wire_index}"
+          wire_index += 1
+
+          next if reserved_names.include?(candidate.downcase)
+          next if reserved_names.include?("dbg_#{candidate}".downcase)
+
+          break DbgSignal.new("dbg_#{candidate}")
+        end
       end
     end
 
     def stimulus_vectors(nb_inputs)
-      # Nombre maximal de combinaisons possibles
-      max_vectors = 2**nb_inputs
-      count = [@nb_vectors, max_vectors].min
 
       rng = Random.new(@stimulus_seed)
-
+      state_count = 2**nb_inputs
       vectors = []
-      seen = {}
+      previous = nil
 
-      add_vector = lambda do |vector|
-        key = vector.join
+      @nb_vectors.times do |index|
+        value =
+          if index.zero?
+            0
+          else
+            candidate = rng.rand(state_count - 1)
+            candidate >= previous ? candidate + 1 : candidate
+          end
 
-        return if seen[key]
-        return if vectors.size >= count
-
-        vectors << vector
-        seen[key] = true
-      end
-
-      zero = Array.new(nb_inputs, "0")
-      add_vector.call(zero)
-
-   
-      # one = Array.new(nb_inputs, "1")
-      # add_vector.call(one)
-
-     
-      nb_inputs.times do |index|
-        vector = Array.new(nb_inputs, "0")
-        vector[index] = "1"
-
-        add_vector.call(vector)
-      end
-
-      
-      while vectors.size < count
-        vector = Array.new(nb_inputs) do
-          rng.rand(2).to_s
+        vector = Array.new(nb_inputs) do |bit|
+          ((value >> bit) & 1).to_s
         end
 
-        add_vector.call(vector)
+        vectors << vector
+        previous = value
       end
+
+      warn "[DEBUG] fichier : #{__FILE__}"
+      warn "[DEBUG] demandés : #{@nb_vectors}, générés : #{vectors.size}"
 
       vectors
     end
